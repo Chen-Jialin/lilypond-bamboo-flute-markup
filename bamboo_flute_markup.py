@@ -66,7 +66,7 @@ class bamboo_flute:
         self.tube_pitch_midi_num = [55 + k for k, v in pitch_name_dict.items() if self.tonality.lower() in v][0]
         self.pitch_num_dict = {midi_num: bamboo_flute_pitch_num for midi_num, bamboo_flute_pitch_num in zip(range(self.tube_pitch_midi_num, self.tube_pitch_midi_num + 32), range(32))}
 
-    def markup(self, match_obj, octave_entry_mode="absolute", octave_base_num=3, markup_mode="practice"):
+    def jianpu_lyrics(self, match_obj, octave_entry_mode="absolute", octave_base_num=3):
         note_code = match_obj.group().strip()
         pitch_name = match_obj.group(1)
         accidental = match_obj.group(2)
@@ -94,18 +94,17 @@ class bamboo_flute:
             note_value_main = 2
         else:
             note_value_main = 1 / int(note_value_main_code)
-        dot_code = match_obj.group(5)
-        if dot_code:
-            note_value_dot = len(dot_code)
+        note_value_dot_code = match_obj.group(5)
+        if note_value_dot_code:
+            note_value_dot = len(note_value_dot_code)
         else:
             note_value_dot = 0
         note_value = note_value_main * (2 - 2**(-note_value_dot))
 
         if pitch_name.lower() == "r":
+            midi_num = -float("inf")
             jianpu_num = "0"
-            jianpu_octave = 0
-            blow_strength = 0
-            finger_placement = ""
+            jianpu_octave = 1
         else:
             # octave number + pitch name -> MIDI number
             midi_num = [12 * (octave_num + 1) + k for k, v in pitch_name_dict.items() if pitch_name.lower() in v][0] + accidental_num
@@ -121,31 +120,91 @@ class bamboo_flute:
             finger_placement = self.finger_placement_dict[bamboo_flute_pitch_num][0]
             blow_strength = bamboo_flute_pitch_num // 12
 
-        # finger placement + blow strength + jianpu -> markup
+        jianpu_code = jianpu_num
         if note_value_main <= 1/4:
-            jianpu_code = int(math.log2(1 / 4 / note_value_main)) * r"\underline " + jianpu_num
-            if note_value_dot != 0:
-                jianpu_code = r"\line{" + jianpu_code + " " + note_value_dot * "." + "}"
+            jianpu_code = int(math.log2(1 / 4 / note_value_main)) * r"\underline " + jianpu_code
+        if jianpu_octave < 1:
+            jianpu_code = r"\center-column{{{} \vspace #-0.7{}}}".format(jianpu_code, r" \vspace #-0.9".join((1 - jianpu_octave) * [" ."]))
+        elif jianpu_octave > 1:
+            jianpu_code = r"\center-column{{\vspace #{:.1f} {} {}}}".format(-(0.7 + (jianpu_octave - 2) * 0.1), r"\vspace #-0.9 ".join((jianpu_octave - 1) * [". "]) + r"\vspace #-0.3", jianpu_code)
+        if note_value_main <= 1/4:
+            if note_value_dot:
+                jianpu_code = jianpu_code + " " + note_value_dot * "."
         else:
-            jianpu_code = jianpu_num + (int(note_value * 4) - 1) * "-"
-        if jianpu_octave == 0:
-            jianpu_code = jianpu_code + r" \vspace #-0.6 ."
-        else:
-            jianpu_code = (jianpu_octave - 1) * r"\vspace #-0.5 . " + jianpu_code + r' \vspace #-0.6 " "'
-        jianpu_code += r" \vspace #0.1"
-        blow_strength_code = blow_strength * "+ "
-        finger_placement_code = r" \woodwind-diagram #'tin-whistle #'((cc . ({})) (lh . ()) (rh . ()))".format(finger_placement)
+            jianpu_code = jianpu_code + (int(note_value * 4) - 1) * "-"
+        jianpu_code = r"\markup{{{}}}{}{}".format(jianpu_code, note_value_main_code, note_value_dot_code)
+        jianpu_code += "\n"
+        return jianpu_code
 
-        if markup_mode == "performance":
-            note_with_markup_code = r"{}^\markup{{\center-column{{{}}}}}".format(note_code, jianpu_code)
+    def finger_placement_markup(self, match_obj, octave_entry_mode="absolute", octave_base_num=3):
+        note_code = match_obj.group().strip()
+        pitch_name = match_obj.group(1)
+        accidental = match_obj.group(2)
+        if accidental:
+            accidental_num = [k for k, v in accidental_dict.items() if accidental in v][0]
         else:
-            note_with_markup_code = r"{}^\markup{{\center-column{{{}{}{}}}}}".format(note_code, blow_strength_code, jianpu_code, finger_placement_code)
-            note_with_markup_code += "\n"
-        return note_with_markup_code
+            accidental_num = 0
+        octave = match_obj.group(3)
+        if octave:
+            octave_relative_num = -octave.count(",") + octave.count("'")
+        else:
+            octave_relative_num = 0
+        if octave_entry_mode.lower() == "relative":
+            # TODO
+            pass
+        else:
+            if octave_entry_mode.lower() != "fixed":
+                octave_entry_mode = "absolute"
+                octave_base_num = 3
+            octave_num = octave_base_num + octave_relative_num
+        note_value_main_code = match_obj.group(4)
+        if note_value_main_code.lower() == r"\longa":
+            note_value_main = 4
+        elif note_value_main_code.lower() == r"\breve":
+            note_value_main = 2
+        else:
+            note_value_main = 1 / int(note_value_main_code)
+        note_value_dot_code = match_obj.group(5)
+        if note_value_dot_code:
+            note_value_dot = len(note_value_dot_code)
+        else:
+            note_value_dot = 0
+        note_value = note_value_main * (2 - 2**(-note_value_dot))
 
-    def add_markup(self, score_code, octave_entry_mode="absolute", octave_base_num=3, markup_mode="practice"):
-        score_with_markup_code = re.sub(r"(c|d|e|f|g|a|b|r)(ff|f|!|\?|s|ss|x)?(,*|'*)(\d+|\\breve|\\longa)(\.*)(~|\(|\)|\\\(|\\\))*(\s*)", lambda match_obj: self.markup(match_obj, octave_entry_mode, octave_base_num, markup_mode), score_code, flags=re.I)
-        return score_with_markup_code
+        if pitch_name.lower() == "r":
+            return note_code
+
+        # octave number + pitch name -> MIDI number
+        midi_num = [12 * (octave_num + 1) + k for k, v in pitch_name_dict.items() if pitch_name.lower() in v][0] + accidental_num
+
+        # MIDI number -> bamboo flute pitch number
+        bamboo_flute_pitch_num = self.pitch_num_dict[midi_num]
+
+        # bamboo flute pitch number + finger placement mode -> jianpu
+        jianpu_num = jianpu_num_dict[([k for k, v in jianpu_num_dict.items() if self.finger_placement_mode in v][0] + bamboo_flute_pitch_num) % 12][0]
+        jianpu_octave = ([k for k, v in jianpu_num_dict.items() if self.finger_placement_mode in v][0] + bamboo_flute_pitch_num) // 12
+
+        # bamboo flute pitch number -> finger placement + blow strength
+        finger_placement = self.finger_placement_dict[bamboo_flute_pitch_num][0]
+        blow_strength = bamboo_flute_pitch_num // 12
+
+        if blow_strength:
+            blow_strength_markup = r"^\markup{{{}}}".format(" ".join(blow_strength * ["+"]))
+        else:
+            blow_strength_markup = ""
+        finger_placement_markup = r"^\markup{{\center-column{{\woodwind-diagram #'tin-whistle #'((cc . ({})) (lh . ()) (rh . ()))}}}}".format(finger_placement)
+        note_with_markup = note_code + finger_placement_markup + blow_strength_markup
+        note_with_markup += "\n"
+        return note_with_markup
+
+    def get_jianpu_lyrics(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
+        # remove bar
+        score_code = score_code.replace("|", " ")
+        score_code = score_code.replace(r"\breathe", " ")
+        return re.sub(r"(c|d|e|f|g|a|b|r)(ff|f|!|\?|s|ss|x)?(,*|'*)(\d+|\\breve|\\longa)(\.*)(~|\(|\)|\\\(|\\\))*(\s*)", lambda match_obj: self.jianpu_lyrics(match_obj, octave_entry_mode, octave_base_num), score_code, flags=re.I)
+
+    def add_finger_placement_markup(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
+        return re.sub(r"(c|d|e|f|g|a|b|r)(ff|f|!|\?|s|ss|x)?(,*|'*)(\d+|\\breve|\\longa)(\.*)(~|\(|\)|\\\(|\\\))*(\s*)", lambda match_obj: self.finger_placement_markup(match_obj, octave_entry_mode, octave_base_num), score_code, flags=re.I)
 
 if __name__ == "__main__":
     cwd = os.path.split(os.path.realpath(__file__))[0]
@@ -153,15 +212,18 @@ if __name__ == "__main__":
     file_path = os.path.join(cwd, file_name)
     file_name_new = "testcase-output.ly"
     file_path_new = os.path.join(cwd, file_name_new)
-    if os.path.exists(file_path_new):
-        if not re.match(r"\s*y\s*", input("Warning: file already exists. Continue to overwrite? [y|N]"), re.I):
-            exit()
+    # if os.path.exists(file_path_new):
+    #     if not re.match(r"\s*y\s*", input("Warning: file already exists. Continue to overwrite? [y|N]"), re.I):
+    #         exit()
     bf = bamboo_flute("G", "5")
     with open(file_path, "r", encoding="UTF-8") as f:
         script = f.read()
         score_code_match_obj = get_score_code(script)
-        score_with_markup_code = bf.add_markup(score_code_match_obj.group(1), octave_entry_mode="fixed", octave_base_num=4, markup_mode="practice")
+        score_with_markup_code = bf.add_finger_placement_markup(score_code_match_obj.group(1), octave_entry_mode="fixed", octave_base_num=4)
         score_with_markup_code = r"\textLengthOn" + score_with_markup_code
-        script_new = script.replace(score_code_match_obj.group(), score_with_markup_code)
-        with open(file_path_new, "w", encoding="UTF-8") as f_new:
-            f_new.write(script_new)
+        # print(score_with_markup_code)
+        jianpu_lyrics = bf.get_jianpu_lyrics(score_code_match_obj.group(1), octave_entry_mode="fixed", octave_base_num=4)
+        print(jianpu_lyrics)
+        # script_new = script.replace(score_code_match_obj.group(), score_with_markup_code)
+        # with open(file_path_new, "w", encoding="UTF-8") as f_new:
+        #     f_new.write(script_new)

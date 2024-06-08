@@ -25,7 +25,7 @@ melody = \fixed c' {
   \tempo 4 = 120
 
   % score begin
-  e8 b8 g8 fs8 d4 | e8 b8 g8 fs8 a4 | e8 b8 g8 d8 fs4 | e8 b8 g8 d8 a4 | e8 b8 g8 d8 fs8 e8 | e2. \breathe |
+  e''8 b8 g8 fs8 d4 | e8 b8 g8 fs8 a4 | e8 b8 g8 d8 fs4 | e8 b8 g8 d8 a4 | e8 b8 g8 d8 fs8 e8 | e2. \breathe |
   \repeat volta 4 {
     e2 e4 | b8 b4.~ b8 b8 | fs4. g8 fs4 | e2.~ | e2. \breathe |
     r4 b4 d'4 | e'2 d'4 | b4 cs'4 a4 | b2.~ | b2.~ | b2.~ |
