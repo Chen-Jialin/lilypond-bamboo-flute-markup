@@ -100,6 +100,7 @@ class bamboo_flute:
         else:
             note_value_dot = 0
         note_value = note_value_main * (2 - 2**(-note_value_dot))
+        barline = bool(match_obj.group(8))
 
         if pitch_name.lower() == "r":
             midi_num = -float("inf")
@@ -132,7 +133,7 @@ class bamboo_flute:
                 jianpu_code = jianpu_code + " " + note_value_dot * "."
         else:
             jianpu_code = jianpu_code + (int(note_value * 4) - 1) * "-"
-        jianpu_code = r"\markup{{{}}}{}{}".format(jianpu_code, note_value_main_code, note_value_dot_code)
+        jianpu_code = r"\markup{{{}{}}}{}{}".format(jianpu_code, barline * " |", note_value_main_code, note_value_dot_code)
         jianpu_code += "\n"
         return jianpu_code
 
@@ -198,13 +199,11 @@ class bamboo_flute:
         return note_with_markup
 
     def get_jianpu_lyrics(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
-        # remove bar line
-        score_code = score_code.replace("|", " ")
         # remove breathe code
         score_code = score_code.replace(r"\breathe", " ")
         # remove extra volta number
         score_code = re.sub(r"(\\volta\s+\d*)(\s*,\s*\d*)*", r"\1", score_code)
-        return re.sub(r"(c|d|e|f|g|a|b|r)(ff|f|!|\?|s|ss|x)?(,*|'*)(\d+|\\breve|\\longa)(\.*)(~|\(|\)|\\\(|\\\))*(\s*)", lambda match_obj: self.jianpu_lyrics(match_obj, octave_entry_mode, octave_base_num), score_code, flags=re.I)
+        return re.sub(r"(c|d|e|f|g|a|b|r)(ff|f|!|\?|s|ss|x)?(,*|'*)(\d+|\\breve|\\longa)(\.*)(~|\(|\)|\\\(|\\\))*(\s*)(\||\\bar)?(\s*)", lambda match_obj: self.jianpu_lyrics(match_obj, octave_entry_mode, octave_base_num), score_code, flags=re.I)
 
     def add_finger_placement_markup(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
         return re.sub(r"(c|d|e|f|g|a|b|r)(ff|f|!|\?|s|ss|x)?(,*|'*)(\d+|\\breve|\\longa)(\.*)(~|\(|\)|\\\(|\\\))*(\s*)", lambda match_obj: self.finger_placement_markup(match_obj, octave_entry_mode, octave_base_num), score_code, flags=re.I)

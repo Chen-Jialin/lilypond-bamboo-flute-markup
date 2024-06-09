@@ -173,77 +173,77 @@ jianpu = \lyricmode {
   \markup{\underline 3}8
   \markup{\underline 1}8
   \markup{\center-column{\underline 7 \vspace #-0.7 .}}8
-  \markup{\center-column{5 \vspace #-0.7 .}}4
+  \markup{\center-column{5 \vspace #-0.7 .} |}4
   \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
   \markup{\underline 3}8
   \markup{\underline 1}8
   \markup{\center-column{\underline 7 \vspace #-0.7 .}}8
-  \markup{2}4
+  \markup{2 |}4
   \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
   \markup{\underline 3}8
   \markup{\underline 1}8
   \markup{\center-column{\underline 5 \vspace #-0.7 .}}8
-  \markup{\center-column{7 \vspace #-0.7 .}}4
+  \markup{\center-column{7 \vspace #-0.7 .} |}4
   \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
   \markup{\underline 3}8
   \markup{\underline 1}8
   \markup{\center-column{\underline 5 \vspace #-0.7 .}}8
-  \markup{2}4
+  \markup{2 |}4
   \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
   \markup{\underline 3}8
   \markup{\underline 1}8
   \markup{\center-column{\underline 5 \vspace #-0.7 .}}8
   \markup{\center-column{\underline 7 \vspace #-0.7 .}}8
-  \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
-  \markup{\center-column{6 \vspace #-0.7 .}--}2.
+  \markup{\center-column{\underline 6 \vspace #-0.7 .} |}8
+  \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
   \repeat volta 4 {
     \markup{\center-column{6 \vspace #-0.7 .}-}2
-    \markup{\center-column{6 \vspace #-0.7 .}}4
+    \markup{\center-column{6 \vspace #-0.7 .} |}4
     \markup{\underline 3}8
     \markup{3 .}4.
     \markup{\underline 3}8
-    \markup{\underline 3}8
+    \markup{\underline 3 |}8
     \markup{\center-column{7 \vspace #-0.7 .} .}4.
     \markup{\underline 1}8
-    \markup{\center-column{7 \vspace #-0.7 .}}4
-    \markup{\center-column{6 \vspace #-0.7 .}--}2.
-    \markup{\center-column{6 \vspace #-0.7 .}--}2.
+    \markup{\center-column{7 \vspace #-0.7 .} |}4
+    \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
+    \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
     \markup{0}4
     \markup{3}4
-    \markup{5}4
+    \markup{5 |}4
     \markup{6-}2
-    \markup{5}4
+    \markup{5 |}4
     \markup{3}4
     \markup{♯4}4
-    \markup{2}4
-    \markup{3--}2.
-    \markup{3--}2.
-    \markup{3--}2.
+    \markup{2 |}4
+    \markup{3-- |}2.
+    \markup{3-- |}2.
+    \markup{3-- |}2.
     \markup{3}4
     \markup{0}4
-    \markup{6}4
+    \markup{6 |}4
     \markup{6-}2
-    \markup{6}4
+    \markup{6 |}4
     \markup{5-}2
-    \markup{3}4
+    \markup{3 |}4
     \markup{3}4
     \markup{2}4
-    \markup{1}4
+    \markup{1 |}4
     \markup{\center-column{7 \vspace #-0.7 .}}4
-    \markup{\center-column{5 \vspace #-0.7 .}-}2
-    \markup{\center-column{5 \vspace #-0.7 .}--}2.
+    \markup{\center-column{5 \vspace #-0.7 .}- |}2
+    \markup{\center-column{5 \vspace #-0.7 .}-- |}2.
     \alternative{
       \volta 1 {
         \markup{\center-column{6 \vspace #-0.7 .}-}2
-        \markup{3}4
+        \markup{3 |}4
         \markup{2-}2
-        \markup{1}4
+        \markup{1 |}4
         \markup{\center-column{7 \vspace #-0.7 .}}4
         \markup{\center-column{6 \vspace #-0.7 .}}4
-        \markup{\center-column{5 \vspace #-0.7 .}}4
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
+        \markup{\center-column{5 \vspace #-0.7 .} |}4
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
         \markup{\center-column{6 \vspace #-0.7 .}-}2
         \markup{\center-column{6 \vspace #-0.7 .}}4
       }
@@ -252,56 +252,56 @@ jianpu = \lyricmode {
         \markup{\underline 3}8
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 1}8
-        \markup{\center-column{6 \vspace #-0.7 .}}4
+        \markup{\center-column{6 \vspace #-0.7 .} |}4
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 3}8
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 1}8
-        \markup{\center-column{7 \vspace #-0.7 .}}4
+        \markup{\center-column{7 \vspace #-0.7 .} |}4
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 3}8
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 1}8
-        \markup{1}4
+        \markup{1 |}4
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 3}8
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 1}8
-        \markup{2}4
+        \markup{2 |}4
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 3}8
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 1}8
-        \markup{\center-column{6 \vspace #-0.7 .}}4
+        \markup{\center-column{6 \vspace #-0.7 .} |}4
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\underline 3}8
         \markup{\center-column{\underline 6 \vspace #-0.7 .}}8
         \markup{\center-column{\underline 7 \vspace #-0.7 .}}8
         \markup{\underline 1}8
-        \markup{\underline 2}8
-        \markup{3--}2.
+        \markup{\underline 2 |}8
+        \markup{3-- |}2.
         \markup{3-}2
-        \markup{2}4
+        \markup{2 |}4
         \markup{1}4
-        \markup{\center-column{7 \vspace #-0.7 .}-}2
+        \markup{\center-column{7 \vspace #-0.7 .}- |}2
         \markup{\center-column{6 \vspace #-0.7 .}-}2
-        \markup{\center-column{5 \vspace #-0.7 .}}4
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
+        \markup{\center-column{5 \vspace #-0.7 .} |}4
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
       }
       \volta 4 {
         \markup{\center-column{6 \vspace #-0.7 .}-}2
-        \markup{3}4
+        \markup{3 |}4
         \markup{2-}2
-        \markup{1}4
+        \markup{1 |}4
         \markup{\center-column{7 \vspace #-0.7 .}}4
         \markup{\center-column{6 \vspace #-0.7 .}}4
-        \markup{\center-column{5 \vspace #-0.7 .}}4
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
-        \markup{\center-column{6 \vspace #-0.7 .}--}2.
+        \markup{\center-column{5 \vspace #-0.7 .} |}4
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
+        \markup{\center-column{6 \vspace #-0.7 .}-- |}2.
         \markup{\center-column{6 \vspace #-0.7 .}-}2
-        \markup{0}4
+        \markup{0 |}4
       }
     }
   }
