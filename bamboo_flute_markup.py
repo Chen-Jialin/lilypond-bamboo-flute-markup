@@ -198,9 +198,12 @@ class bamboo_flute:
         return note_with_markup
 
     def get_jianpu_lyrics(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
-        # remove bar
+        # remove bar line
         score_code = score_code.replace("|", " ")
+        # remove breathe code
         score_code = score_code.replace(r"\breathe", " ")
+        # remove extra volta number
+        score_code = re.sub(r"(\\volta\s+\d*)(\s*,\s*\d*)*", r"\1", score_code)
         return re.sub(r"(c|d|e|f|g|a|b|r)(ff|f|!|\?|s|ss|x)?(,*|'*)(\d+|\\breve|\\longa)(\.*)(~|\(|\)|\\\(|\\\))*(\s*)", lambda match_obj: self.jianpu_lyrics(match_obj, octave_entry_mode, octave_base_num), score_code, flags=re.I)
 
     def add_finger_placement_markup(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
@@ -210,20 +213,13 @@ if __name__ == "__main__":
     cwd = os.path.split(os.path.realpath(__file__))[0]
     file_name = "testcase.ly"
     file_path = os.path.join(cwd, file_name)
-    file_name_new = "testcase-output.ly"
-    file_path_new = os.path.join(cwd, file_name_new)
-    # if os.path.exists(file_path_new):
-    #     if not re.match(r"\s*y\s*", input("Warning: file already exists. Continue to overwrite? [y|N]"), re.I):
-    #         exit()
     bf = bamboo_flute("G", "5")
     with open(file_path, "r", encoding="UTF-8") as f:
         script = f.read()
+        octave_entry_mode, octave_base_num = get_octave_entry_mode(script)
         score_code_match_obj = get_score_code(script)
-        score_with_markup_code = bf.add_finger_placement_markup(score_code_match_obj.group(1), octave_entry_mode="fixed", octave_base_num=4)
+        score_with_markup_code = bf.add_finger_placement_markup(score_code_match_obj.group(1), octave_entry_mode=octave_entry_mode, octave_base_num=octave_base_num)
         score_with_markup_code = r"\textLengthOn" + score_with_markup_code
-        # print(score_with_markup_code)
-        jianpu_lyrics = bf.get_jianpu_lyrics(score_code_match_obj.group(1), octave_entry_mode="fixed", octave_base_num=4)
+        print(score_with_markup_code)
+        jianpu_lyrics = bf.get_jianpu_lyrics(score_code_match_obj.group(1), octave_entry_mode=octave_entry_mode, octave_base_num=octave_base_num)
         print(jianpu_lyrics)
-        # script_new = script.replace(score_code_match_obj.group(), score_with_markup_code)
-        # with open(file_path_new, "w", encoding="UTF-8") as f_new:
-        #     f_new.write(script_new)

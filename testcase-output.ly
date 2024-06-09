@@ -317,7 +317,7 @@ jianpu = \lyricmode {
     }
     midiInstrument = "shakuhachi"
   } \melody
-  \new Lyrics { \jianpu }
+  \new Lyrics \jianpu
   >>
-  % \layout { }
+  \layout { }
 }
