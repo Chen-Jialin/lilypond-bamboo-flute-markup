@@ -65,6 +65,7 @@ class bamboo_flute:
         self.finger_placement_mode = finger_placement_mode
         self.tube_pitch_midi_num = [55 + k for k, v in pitch_name_dict.items() if self.tonality.lower() in v][0]
         self.pitch_num_dict = {midi_num: bamboo_flute_pitch_num for midi_num, bamboo_flute_pitch_num in zip(range(self.tube_pitch_midi_num, self.tube_pitch_midi_num + 32), range(32))}
+        self.tie = False# 延音线是否开启 whether tie is on
 
     def jianpu_lyrics(self, match_obj, octave_entry_mode="absolute", octave_base_num=3):
         note_code = match_obj.group().strip()
@@ -171,8 +172,12 @@ class bamboo_flute:
         else:
             note_value_dot = 0
         note_value = note_value_main * (2 - 2**(-note_value_dot))
+        tie_and_slur_code = match_obj.group(6)
 
-        if pitch_name.lower() == "r":
+        # 若延音线开启, 则当前音符不标注指法 if tie is on, finger placement markup will not be added to current note
+        # 若当前音符为休止符, 则不标注指法 if current note is rest, finger placement markup will not be added
+        if self.tie or (pitch_name.lower() == "r"):
+            self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
             return note_code
 
         # octave number + pitch name -> MIDI number
@@ -196,6 +201,8 @@ class bamboo_flute:
         finger_placement_markup = r"^\markup{{\center-column{{\woodwind-diagram #'tin-whistle #'((cc . ({})) (lh . ()) (rh . ()))}}}}".format(finger_placement)
         note_with_markup = note_code + finger_placement_markup + blow_strength_markup
         note_with_markup += "\n"
+
+        self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
         return note_with_markup
 
     def get_jianpu_lyrics(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
