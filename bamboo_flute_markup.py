@@ -178,7 +178,10 @@ class bamboo_flute:
         # 若当前音符为休止符, 则不标注指法 if current note is rest, finger placement markup will not be added
         if self.tie or (pitch_name.lower() == "r"):
             self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
-            return note_code + "\n"
+            if self.tie:
+                return note_code + " "
+            else:
+                return note_code + "\n"
 
         # octave number + pitch name -> MIDI number
         midi_num = [12 * (octave_num + 1) + k for k, v in pitch_name_dict.items() if pitch_name.lower() in v][0] + accidental_num
@@ -200,9 +203,11 @@ class bamboo_flute:
             blow_strength_markup = ""
         finger_placement_markup = r"^\markup{{\center-column{{\woodwind-diagram #'tin-whistle #'((cc . ({})) (lh . ()) (rh . ()))}}}}".format(finger_placement)
         note_with_markup = note_code + finger_placement_markup + blow_strength_markup
-        note_with_markup += "\n"
-
         self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
+        if self.tie:
+            note_with_markup += " "
+        else:
+            note_with_markup += "\n"
         return note_with_markup
 
     def get_jianpu_lyrics(self, score_code, octave_entry_mode="absolute", octave_base_num=3):
