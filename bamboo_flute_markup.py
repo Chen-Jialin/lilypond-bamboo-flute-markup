@@ -178,7 +178,7 @@ class bamboo_flute:
         # 若当前音符为休止符, 则不标注指法 if current note is rest, finger placement markup will not be added
         if self.tie or (pitch_name.lower() == "r"):
             self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
-            return note_code
+            return note_code + "\n"
 
         # octave number + pitch name -> MIDI number
         midi_num = [12 * (octave_num + 1) + k for k, v in pitch_name_dict.items() if pitch_name.lower() in v][0] + accidental_num
