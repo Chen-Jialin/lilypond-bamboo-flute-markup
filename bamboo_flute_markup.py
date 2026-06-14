@@ -340,24 +340,19 @@ class BambooFlute:
 
         # Handle tie continuation across bar lines.
         if self.tie and pitch_name.lower() != "r":
-            duration_in_quarters = note_value * 4
-            if abs(duration_in_quarters
-                   - round(duration_in_quarters)) < 1e-12:
-                # Integer multiple of 1/4 beat: hyphens.
-                jianpu_code = "-" * int(duration_in_quarters)
+            # Always re-notate with parentheses for tie continuations
+            # across bar lines, regardless of duration.
+            jianpu_code = "(" + jianpu_num + ")"
+            jianpu_code = self._format_jianpu_underline(
+                jianpu_code, note_value_main)
+            jianpu_code = self._format_jianpu_with_octave(
+                jianpu_code, jianpu_octave)
+            if note_value_main <= 0.25:
+                if note_value_dot:
+                    jianpu_code += " " + note_value_dot * "."
             else:
-                # Non-integer duration: re-notate with parentheses.
-                jianpu_code = "(" + jianpu_num + ")"
-                jianpu_code = self._format_jianpu_underline(
-                    jianpu_code, note_value_main)
-                jianpu_code = self._format_jianpu_with_octave(
-                    jianpu_code, jianpu_octave)
-                if note_value_main <= 0.25:
-                    if note_value_dot:
-                        jianpu_code += " " + note_value_dot * "."
-                else:
-                    jianpu_code += (
-                        int(note_value * 4) - 1) * "-"
+                jianpu_code += (
+                    int(note_value * 4) - 1) * "-"
         else:
             # Normal note (first of tie or no tie).
             jianpu_code = self._format_jianpu_underline(

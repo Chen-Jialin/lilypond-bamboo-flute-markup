@@ -58,8 +58,7 @@ a'4^\markup{\center-column{\woodwind-diagram #'tin-whistle #'((cc . (one two fou
 b'4^\markup{\center-column{\woodwind-diagram #'tin-whistle #'((cc . (one three four six)) (lh . ()) (rh . ()))}}^\markup{+ +}
 |
   % 4. 附点二分音符跨小节 (整数倍 → "---")
-  f'4^\markup{\center-column{\woodwind-diagram #'tin-whistle #'((cc . (two three four five)) (lh . ()) (rh . ()))}}^\markup{+}
-f'2.~^\markup{\center-column{\woodwind-diagram #'tin-whistle #'((cc . (two three four five)) (lh . ()) (rh . ()))}}^\markup{+} |
+  f'4^\markup{\center-column{\woodwind-diagram #'tin-whistle #'((cc . (two three four five)) (lh . ()) (rh . ()))}}^\markup{+}f'2.~^\markup{\center-column{\woodwind-diagram #'tin-whistle #'((cc . (two three four five)) (lh . ()) (rh . ()))}}^\markup{+} |
   f'2.
 g'4^\markup{\center-column{\woodwind-diagram #'tin-whistle #'((cc . (two three four five six)) (lh . ()) (rh . ()))}}^\markup{+ +}
 |
@@ -110,7 +109,7 @@ jianpu = \lyricmode {
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 2}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 3}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 1} |}4
-\markup{-}4
+\markup{\center-column{\vspace #-0.7 . \vspace #-0.3 (1)}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 2}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 3}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 4} |}4
@@ -119,11 +118,11 @@ jianpu = \lyricmode {
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 6}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 7}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 5} |}4
-\markup{-}4
+\markup{\center-column{\vspace #-0.7 . \vspace #-0.3 (5)}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 6}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 7}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 5} |}4
-\markup{-}4
+\markup{\center-column{\vspace #-0.7 . \vspace #-0.3 (5)}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 6}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 7}}4
 \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 1} |}4
@@ -131,17 +130,17 @@ jianpu = \lyricmode {
   \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 2}}4
 \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 1}}4
 \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 2}- |}2
-\markup{--}2
+\markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 (2)}-}2
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 6}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 7} |}4
 % 4. 附点二分音符跨小节 (整数倍 → "---")
   \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 4}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 4}-- |}2.
-\markup{---}2.
+\markup{\center-column{\vspace #-0.7 . \vspace #-0.3 (4)}--}2.
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 5} |}4
 % 5. 全音符跨两小节 (整数倍 → "----")
   \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 6}--- |}1
-\markup{---- |}1
+\markup{\center-column{\vspace #-0.7 . \vspace #-0.3 (6)}--- |}1
 % 6. 八分音符跨小节 (非整数倍 → 括号)
   \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 7}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 7}}4
@@ -166,14 +165,13 @@ jianpu = \lyricmode {
 \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 1} . |}4.
 % 8. 全音符跨三小节 (整数倍 → "----" 持续两次)
   \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 1}--- |}1
-\markup{---- |}1
-\markup{---- |}1
+\markup{\center-column{\vspace #-0.7 . \vspace #-0.3 (1)}--- |}1
+\markup{\center-column{\vspace #-0.7 . \vspace #-0.3 (1)}--- |}1
 % 9. 无延音线对照 (正常标注)
   \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 1}}4
 \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 2}}4
 \markup{\center-column{\vspace #-0.8 . \vspace #-0.9 . \vspace #-0.3 1}}4
 \markup{\center-column{\vspace #-0.7 . \vspace #-0.3 6} |}4
-
 }
 
 \score {
