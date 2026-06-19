@@ -10,13 +10,20 @@ import re
 from typing import Optional
 
 # Mapping from pitch class to pitch name strings used in LilyPond.
+# Each chromatic pitch class lists both flat and sharp spellings; the
+# first entry is the preferred variant when auto-selecting a tonality.
 PITCH_NAME_DICT: dict[int, list[str]] = {
     0: ["c"],
+    1: ["df", "cs"],
     2: ["d"],
+    3: ["ef", "ds"],
     4: ["e"],
     5: ["f"],
+    6: ["fs", "gf"],
     7: ["g"],
+    8: ["af", "gs"],
     9: ["a"],
+    10: ["bf", "as"],
     11: ["b"],
 }
 
@@ -104,6 +111,49 @@ _NOTE_EVENT_RE = re.compile(
     r"(?:(?P<octave2>[,']*)(?P<dur2>\d+|\\breve|\\longa)"
     r"(?P<dots2>\.*))",
     re.IGNORECASE)
+
+
+def get_key_signature(script: str) -> str:
+    """Parse the \\key command and return the (relative-major) tonic.
+
+    Scans for ``\\key <pitch> \\major`` or ``\\key <pitch> \\minor``.  If
+    in a minor key, the tonic is raised by a minor third to yield the
+    relative major (e.g. A minor → C, G minor → B♭).  If no ``\\key``
+    command is found, defaults to ``\"C\"`` (no accidentals).
+
+    Args:
+        script: Raw LilyPond source text.
+
+    Returns:
+        The capitalised tonic note name of the key or its relative major
+        (e.g. ``\"C\"``, ``\"G\"``, ``\"Bf\"``, ``\"Ef\"``).
+    """
+    match_obj = re.search(
+        r"\\key\s+([a-g])(ff|f|s|ss|x)?\s*\\(major|minor)",
+        script,
+        flags=re.IGNORECASE)
+    if not match_obj:
+        return "C"
+
+    tonic_letter = match_obj.group(1).lower()
+    accidental = match_obj.group(2) or ""
+    tonic_full = tonic_letter + accidental  # e.g. "c", "bf", "fs"
+    mode = match_obj.group(3).lower()
+
+    if mode == "minor":
+        # Build reverse lookup: every name in PITCH_NAME_DICT → pitch class.
+        name_to_pc: dict[str, int] = {}
+        for pc, names in PITCH_NAME_DICT.items():
+            for name in names:
+                name_to_pc[name] = pc
+
+        tonic_pc = name_to_pc[tonic_full]
+        relative_pc = (tonic_pc + 3) % 12
+        # Return the first (preferred) name of the relative major pitch
+        # class (e.g. pitch class 10 → "bf" → "Bf").
+        return PITCH_NAME_DICT[relative_pc][0].capitalize()
+
+    return tonic_full.capitalize()
 
 
 def _expand_abbreviations(score_code: str) -> str:
@@ -635,25 +685,28 @@ if __name__ == "__main__":
     cwd = os.path.split(os.path.realpath(__file__))[0]
     file_name = "testcase.ly"
     file_path = os.path.join(cwd, file_name)
-    bf = BambooFlute("C", "5")
     with open(file_path, "r", encoding="UTF-8") as f:
         script = f.read()
-        octave_entry_mode, octave_base_num = get_octave_entry_mode(script)
-        score_code_match_obj = get_score_code(script)
-        if not score_code_match_obj:
-            raise SystemExit(
-                "Error: Could not find '% score begin' / '% score end' "
-                "markers in input file.")
-        score_code = score_code_match_obj.group(1)
-        score_code = _expand_abbreviations(score_code)
-        score_with_markup = bf.add_finger_placement_markup(
-            score_code,
-            octave_entry_mode=octave_entry_mode,
-            octave_base_num=octave_base_num)
-        score_with_markup = r"\textLengthOn" + score_with_markup
-        print(score_with_markup)
-        jianpu_lyrics = bf.get_jianpu_lyrics(
-            score_code,
-            octave_entry_mode=octave_entry_mode,
-            octave_base_num=octave_base_num)
-        print(jianpu_lyrics)
+
+    tonality = get_key_signature(script)
+    bf = BambooFlute(tonality, "5")
+
+    octave_entry_mode, octave_base_num = get_octave_entry_mode(script)
+    score_code_match_obj = get_score_code(script)
+    if not score_code_match_obj:
+        raise SystemExit(
+            "Error: Could not find '% score begin' / '% score end' "
+            "markers in input file.")
+    score_code = score_code_match_obj.group(1)
+    score_code = _expand_abbreviations(score_code)
+    score_with_markup = bf.add_finger_placement_markup(
+        score_code,
+        octave_entry_mode=octave_entry_mode,
+        octave_base_num=octave_base_num)
+    score_with_markup = r"\textLengthOn" + score_with_markup
+    print(score_with_markup)
+    jianpu_lyrics = bf.get_jianpu_lyrics(
+        score_code,
+        octave_entry_mode=octave_entry_mode,
+        octave_base_num=octave_base_num)
+    print(jianpu_lyrics)
