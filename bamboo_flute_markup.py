@@ -97,6 +97,70 @@ def get_score_code(script: str) -> Optional[re.Match]:
     return match_obj
 
 
+_NOTE_EVENT_RE = re.compile(
+    r"(?:(?<![a-zA-Z\\])(?P<pitch1>[cdefgabr](?:ff|f|!|\?|s|ss|x)?[,']*)"
+    r"(?P<dur1>\d+|\\breve|\\longa)?(?P<dots1>\.*))"
+    r"|"
+    r"(?:(?P<octave2>[,']*)(?P<dur2>\d+|\\breve|\\longa)"
+    r"(?P<dots2>\.*))",
+    re.IGNORECASE)
+
+
+def _expand_abbreviations(score_code: str) -> str:
+    """Expand LilyPond abbreviation notation into complete note form.
+
+    LilyPond allows omitting the duration when it repeats the previous
+    note's value: ``c'4 b b b8 b`` expands to ``c'4 b4 b4 b8 b8``.
+    It also allows omitting the pitch name: ``c'4 b4 4 8 8`` expands
+    to ``c'4 b4 b4 b8 b8``.  This function fills in all omitted values
+    so that every note has both pitch and duration.
+
+    The first note without a pitch defaults to middle C (``c``).  The
+    first note without a duration defaults to quarter note (``4``).
+    Chords (``<...>``) are not supported.
+
+    Args:
+        score_code: LilyPond note text with possible abbreviations.
+
+    Returns:
+        Score text with all abbreviations expanded to full note form.
+    """
+    # Remove \\volta N, N, ... before expansion to prevent their numeric
+    # arguments from being matched as duration-only abbreviated notes.
+    score_code = re.sub(
+        r"\\volta\s+\d+(?:\s*,\s*\d+)*",
+        "",
+        score_code)
+
+    last_pitch = "c"
+    last_duration = "4"
+
+    def _expand_match(m: re.Match) -> str:
+        nonlocal last_pitch, last_duration
+
+        pitch = m.group("pitch1")
+        if pitch:
+            duration = m.group("dur1")
+            if duration:
+                # Complete note: both pitch and duration present.
+                last_pitch = pitch
+                dots = m.group("dots1") or ""
+                last_duration = duration + dots
+                return m.group()
+            else:
+                # Pitch-only abbreviation: no duration, inherit previous.
+                last_pitch = pitch
+                return pitch + last_duration
+        else:
+            # Duration-only abbreviation: no pitch, inherit previous.
+            duration = m.group("dur2")
+            dots = m.group("dots2") or ""
+            last_duration = duration + dots
+            return last_pitch + last_duration
+
+    return _NOTE_EVENT_RE.sub(_expand_match, score_code)
+
+
 class BambooFlute:
     """Generates bamboo flute markup for LilyPond scores.
 
@@ -580,14 +644,16 @@ if __name__ == "__main__":
             raise SystemExit(
                 "Error: Could not find '% score begin' / '% score end' "
                 "markers in input file.")
+        score_code = score_code_match_obj.group(1)
+        score_code = _expand_abbreviations(score_code)
         score_with_markup = bf.add_finger_placement_markup(
-            score_code_match_obj.group(1),
+            score_code,
             octave_entry_mode=octave_entry_mode,
             octave_base_num=octave_base_num)
         score_with_markup = r"\textLengthOn" + score_with_markup
         print(score_with_markup)
         jianpu_lyrics = bf.get_jianpu_lyrics(
-            score_code_match_obj.group(1),
+            score_code,
             octave_entry_mode=octave_entry_mode,
             octave_base_num=octave_base_num)
         print(jianpu_lyrics)
