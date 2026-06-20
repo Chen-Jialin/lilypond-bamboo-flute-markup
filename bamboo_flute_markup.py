@@ -55,9 +55,14 @@ JIANPU_NUM_DICT: dict[int, list[str]] = {
     11: ["7"],
 }
 
+# Filler blanks used in \center-column so that the breath-mark ∨ on
+# a tie-continuation note (which has no finger diagram) aligns vertically
+# with the ∨ that appears on notes that do have a finger diagram.
+BREATH_ALIGNMENT_BLANKS = '" " " " " " " " " " " "'
+
 
 def get_octave_entry_mode(script: str) -> tuple[str, int]:
-    """Detect octave entry mode and base octave number from a LilyPond script.
+    """Detect octave entry mode and reference number from a LilyPond script.
 
     Scans for \\fixed, \\relative, or defaults to absolute mode.
 
@@ -65,8 +70,10 @@ def get_octave_entry_mode(script: str) -> tuple[str, int]:
         script: Raw LilyPond source text.
 
     Returns:
-        A tuple of (mode, base_octave_number), where mode is one of
-        \"fixed\", \"relative\", or \"absolute\".
+        A tuple of (mode, value), where mode is one of \"fixed\",
+        \"relative\", or \"absolute\".  For fixed/absolute, the value
+        is the base octave number.  For relative, the value is the
+        MIDI number of the reference pitch.
     """
     octave_base_num = 3
     match_obj = re.search(
@@ -79,9 +86,30 @@ def get_octave_entry_mode(script: str) -> tuple[str, int]:
         if octave:
             octave_base_num += -octave.count(",") + octave.count("'")
         return "fixed", octave_base_num
-    match_obj = re.search(r"\\relative\s*\{", script, flags=re.IGNORECASE)
+    match_obj = re.search(
+        r"\\relative\s*"
+        r"(c|d|e|f|g|a|b)?"
+        r"(ff|f|s|ss|x)?"
+        r"(,*)"
+        r"('*)"
+        r"\s*\{",
+        script,
+        flags=re.IGNORECASE)
     if match_obj:
-        return "relative", octave_base_num
+        if not match_obj.group(1):
+            # No explicit reference pitch: LilyPond defaults to c'.
+            return "relative", 60
+        pitch = match_obj.group(1).lower()
+        ref_pc = 0
+        for pc, names in PITCH_NAME_DICT.items():
+            if pitch in names:
+                ref_pc = pc
+                break
+        octave_relative = (
+            -match_obj.group(3).count(",") + match_obj.group(4).count("'"))
+        octave_num = 3 + octave_relative
+        ref_midi = 12 * (octave_num + 1) + ref_pc
+        return "relative", ref_midi
     return "absolute", octave_base_num
 
 
@@ -113,6 +141,19 @@ _NOTE_EVENT_RE = re.compile(
     r"|"
     r"(?:(?P<octave2>[,']*)(?P<dur2>\d+|\\breve|\\longa)"
     r"(?P<dots2>\.*))",
+    re.IGNORECASE)
+
+# Regex for matching fully expanded (pitch+duration) note tokens.
+# Used by _adjust_octave_marks and _relative_to_absolute to rewrite
+# octave marks without touching non-note text.
+_EXPANDED_NOTE_RE = re.compile(
+    r"(?<![a-zA-Z\\])"
+    r"(?P<pitch>[cdefgabr])"
+    r"(?P<accidental>ff|f|!|\?|s|ss|x)?"
+    r"(?P<octave>[,']*)"
+    r"(?P<duration>\d+|\\breve|\\longa)"
+    r"(?P<dots>\.*)"
+    r"(?P<tie>[~\(\)]|\\\(|\\\))*",
     re.IGNORECASE)
 
 
@@ -214,6 +255,154 @@ def _expand_abbreviations(score_code: str) -> str:
     return _NOTE_EVENT_RE.sub(_expand_match, score_code)
 
 
+def _adjust_octave_marks(score_code: str, adjustment: int) -> str:
+    """Apply a uniform octave-mark shift to every pitched note.
+
+    For ``\\fixed c'`` (adjustment = +1): each note gains one extra quote.
+    For ``\\fixed c,`` (adjustment = -1): each note gains one extra comma.
+    Rests are left unchanged.
+
+    Args:
+        score_code: Expanded LilyPond note text (output of
+            _expand_abbreviations).
+        adjustment: Octave offset to apply (octave_base_num - 3).
+
+    Returns:
+        Score text with octave marks adjusted.
+    """
+    if adjustment == 0:
+        return score_code
+
+    def _adjust(m: re.Match) -> str:
+        pitch = m.group("pitch").lower()
+        if pitch == "r":
+            return m.group()  # rests have no octave marks
+
+        octave_marks = m.group("octave") or ""
+        current = -octave_marks.count(",") + octave_marks.count("'")
+        new_val = current + adjustment
+        if new_val >= 0:
+            new_marks = "'" * new_val
+        else:
+            new_marks = "," * abs(new_val)
+
+        return (m.group("pitch") +
+                (m.group("accidental") or "") +
+                new_marks +
+                m.group("duration") +
+                (m.group("dots") or "") +
+                (m.group("tie") or ""))
+
+    return _EXPANDED_NOTE_RE.sub(_adjust, score_code)
+
+
+def _relative_to_absolute(score_code: str, ref_midi: int) -> str:
+    """Convert relative-mode notation to absolute-mode with explicit marks.
+
+    Simulates LilyPond's relative octave placement rule: each note is
+    placed in the octave that makes the interval <= a perfect 4th
+    (5 semitones) from the previous pitched note.  Rests do not
+    advance the reference.
+
+    Args:
+        score_code: Expanded LilyPond note text in relative mode.
+        ref_midi: MIDI number of the reference pitch (e.g. 60 for c').
+
+    Returns:
+        Score text in absolute-mode notation with explicit octave marks.
+    """
+    prev_midi: int = ref_midi
+
+    def _convert(m: re.Match) -> str:
+        nonlocal prev_midi
+
+        pitch = m.group("pitch").lower()
+        if pitch == "r":
+            return m.group()  # rest: pass through
+
+        # Parse accidental to numeric offset.
+        accidental_str = m.group("accidental") or ""
+        accidental_num = 0
+        if accidental_str:
+            for k, variants in ACCIDENTAL_DICT.items():
+                if accidental_str.lower() in [v.lower() for v in variants]:
+                    accidental_num = k
+                    break
+
+        # Get pitch class (0=C, 1=C#, ..., 11=B).
+        pitch_class = 0
+        for pc, names in PITCH_NAME_DICT.items():
+            if pitch in names:
+                pitch_class = pc
+                break
+
+        # User-specified octave marks in relative mode are extra shifts.
+        octave_marks = m.group("octave") or ""
+        user_shift = -octave_marks.count(",") + octave_marks.count("'")
+
+        # Proximity-based octave placement.
+        candidate_octave = prev_midi // 12
+        candidate = 12 * candidate_octave + pitch_class + accidental_num
+        diff = candidate - prev_midi
+        if diff > 6:
+            candidate_octave -= 1
+            candidate = 12 * candidate_octave + pitch_class + accidental_num
+        elif diff < -6:
+            candidate_octave += 1
+            candidate = 12 * candidate_octave + pitch_class + accidental_num
+
+        # Apply user-specified extra octave shift.
+        final_octave = candidate_octave + user_shift
+        midi = 12 * final_octave + pitch_class + accidental_num
+        prev_midi = midi
+
+        # Convert MIDI to absolute-mode octave marks.
+        # In absolute mode: c = MIDI 48, so octave_relative = midi//12 - 4.
+        absolute_relative = (midi // 12) - 4
+        if absolute_relative >= 0:
+            new_marks = "'" * absolute_relative
+        else:
+            new_marks = "," * abs(absolute_relative)
+
+        return (m.group("pitch") +
+                (m.group("accidental") or "") +
+                new_marks +
+                m.group("duration") +
+                (m.group("dots") or "") +
+                (m.group("tie") or ""))
+
+    return _EXPANDED_NOTE_RE.sub(_convert, score_code)
+
+
+def _normalize_to_absolute(
+        score_code: str,
+        octave_entry_mode: str,
+        octave_base_num_or_ref: int) -> str:
+    """Normalize score_code so all notes carry explicit absolute-mode marks.
+
+    For fixed and absolute modes, adjusts octave marks by a uniform
+    offset.  For relative mode, simulates LilyPond's placement rule
+    and emits absolute notation.
+
+    Args:
+        score_code: Expanded LilyPond note text (output of
+            _expand_abbreviations).
+        octave_entry_mode: One of \"fixed\", \"absolute\", \"relative\".
+        octave_base_num_or_ref: For fixed/absolute, the base octave
+            number (3 for absolute, 4 for \\fixed c', etc.).  For
+            relative, the MIDI number of the reference pitch.
+
+    Returns:
+        Score text in absolute-mode notation with explicit octave marks.
+    """
+    if octave_entry_mode == "relative":
+        return _relative_to_absolute(score_code, octave_base_num_or_ref)
+    adjustment = octave_base_num_or_ref - 3
+    if adjustment == 0:
+        return score_code
+    return _adjust_octave_marks(score_code, adjustment)
+
+
 class BambooFlute:
     """Generates bamboo flute markup for LilyPond scores.
 
@@ -312,6 +501,92 @@ class BambooFlute:
         # Whether the previous note had an active tie (~).
         self.tie: bool = False
 
+    def validate(self, score_code: str) -> None:
+        """Validate score, stopping at the first issue found.
+
+        Checks performed in score order:
+          1. Each pitched note is within the bamboo flute's playable
+             range (32 semitones above the tube pitch).
+          2. Each ``\\breathe`` is immediately preceded by a pitched
+             note (not by a bar line, break, or nothing).
+
+        Args:
+            score_code: LilyPond note text, already expanded and
+                normalised to absolute-mode notation.
+        """
+        # Combined regex: match either a note+accidental+octave+duration
+        # event, or a \\breathe command.
+        _COMBINED_EVENT_RE = re.compile(
+            r"(?P<note>"
+            r"(c|d|e|f|g|a|b|r)"
+            r"(ff|f|!|\?|s|ss|x)?"
+            r"(,*|'*)"
+            r"(\d+|\\breve|\\longa)"
+            r"(\.*)"
+            r"(~|\(|\)|\\\(|\\\))*"
+            r")"
+            r"|"
+            r"(?P<breathe>\\breathe)",
+            re.IGNORECASE)
+
+        range_start = self.tube_pitch_midi_num
+        range_end = range_start + 31
+
+        for m in _COMBINED_EVENT_RE.finditer(score_code):
+            if m.group("breathe"):
+                # --- Check \\breathe placement ---------------------------
+                before = score_code[:m.start()]
+                if not re.search(
+                        r"(c|d|e|f|g|a|b|r)"
+                        r"(ff|f|!|\?|s|ss|x)?"
+                        r"(,*|'*)"
+                        r"(\d+|\\breve|\\longa)"
+                        r"(\.*)"
+                        r"(~|\(|\)|\\\(|\\\))*"
+                        r"\s*$",
+                        before, re.IGNORECASE):
+                    line_num = score_code[:m.start()].count("\n") + 1
+                    context = before[-40:].replace("\n", " ")
+                    print(
+                        f"WARNING: \\breathe at line {line_num} is not "
+                        f"preceded by a note "
+                        f"(context: ...{context})")
+                    return
+                continue
+
+            # --- Check note range ----------------------------------------
+            pitch_name = m.group(2).lower()
+            if pitch_name == "r":
+                continue  # rest — always in range
+
+            accidental = m.group(3)
+            accidental_num = 0
+            if accidental:
+                for k, v in ACCIDENTAL_DICT.items():
+                    if accidental in v:
+                        accidental_num = k
+                        break
+
+            octave_marks = m.group(4) or ""
+            octave_relative_num = (
+                -octave_marks.count(",") + octave_marks.count("'"))
+            octave_num = 3 + octave_relative_num
+
+            midi_num = (
+                12 * (octave_num + 1)
+                + [k for k, v in PITCH_NAME_DICT.items()
+                   if pitch_name in v][0]
+                + accidental_num)
+
+            if midi_num < range_start or midi_num > range_end:
+                line_num = score_code[:m.start()].count("\n") + 1
+                note_text = m.group().strip()
+                print(
+                    f"WARNING: note {note_text} at line {line_num} "
+                    f"(MIDI {midi_num}) is outside the flute's playable "
+                    f"range ({range_start}-{range_end})")
+                return
+
     def _format_jianpu_with_octave(
             self, jianpu_code: str, jianpu_octave: int) -> str:
         """Wrap jianpu text with octave dot markup.
@@ -360,9 +635,7 @@ class BambooFlute:
 
     def jianpu_lyrics(
             self,
-            match_obj: re.Match,
-            octave_entry_mode: str = "absolute",
-            octave_base_num: int = 3) -> str:
+            match_obj: re.Match) -> str:
         """Generate jianpu markup for one matched note.
 
         Handles tie continuations (hyphens or parenthesized re-notation)
@@ -370,8 +643,6 @@ class BambooFlute:
 
         Args:
             match_obj: Regex match object for one note.
-            octave_entry_mode: \"fixed\", \"relative\", or \"absolute\".
-            octave_base_num: Base octave number for absolute/fixed modes.
 
         Returns:
             A \\markup expression string for this note's jianpu symbol,
@@ -390,21 +661,15 @@ class BambooFlute:
             accidental_num = 0
 
         # Parse octave marks (' = up, , = down).
+        # All notes have been normalized to absolute mode, so:
+        # octave_num = 3 + octave_relative_num.
         octave = match_obj.group(3)
         if octave:
             octave_relative_num = (
                 -octave.count(",") + octave.count("'"))
         else:
             octave_relative_num = 0
-
-        if octave_entry_mode.lower() == "relative":
-            # TODO: relative mode not yet implemented.
-            octave_num = 0  # placeholder
-        else:
-            if octave_entry_mode.lower() != "fixed":
-                octave_entry_mode = "absolute"
-                octave_base_num = 3
-            octave_num = octave_base_num + octave_relative_num
+        octave_num = 3 + octave_relative_num
 
         # Parse duration value.
         note_value_main_code = match_obj.group(4)
@@ -427,7 +692,8 @@ class BambooFlute:
             2 - 2**(-note_value_dot))
 
         tie_and_slur_code = match_obj.group(6)
-        barline = bool(match_obj.group(8))
+        breathes = bool(match_obj.group(8))
+        barline = bool(match_obj.group(10))
 
         if pitch_name.lower() == "r":
             # Rest: jianpu is always "0".
@@ -486,17 +752,17 @@ class BambooFlute:
         # Update tie state for the next note.
         self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
 
+        breath_markup = r' \super "∨"' if breathes else ""
+
         jianpu_code = (
-            r"\markup{{{}{}}}{}{}"
-            .format(jianpu_code, barline * " |",
+            r"\markup{{{}{}{}}}{}{}"
+            .format(jianpu_code, breath_markup, barline * " |",
                     note_value_main_code, note_value_dot_code))
         return jianpu_code + "\n"
 
     def finger_placement_markup(
             self,
-            match_obj: re.Match,
-            octave_entry_mode: str = "absolute",
-            octave_base_num: int = 3) -> str:
+            match_obj: re.Match) -> str:
         """Generate finger diagram markup for one matched note.
 
         When a tie continuation is active (self.tie is True) or the
@@ -504,14 +770,22 @@ class BambooFlute:
 
         Args:
             match_obj: Regex match object for one note.
-            octave_entry_mode: \"fixed\", \"relative\", or \"absolute\".
-            octave_base_num: Base octave number for absolute/fixed modes.
 
         Returns:
             The note text with optional \\markup annotations appended,
             and a trailing newline or space.
         """
-        note_code = match_obj.group().strip()
+        # Reconstruct note_code from individual groups instead of
+        # match_obj.group().strip(), because the full match may now
+        # include a trailing \\breathe in group(8).
+        note_code = (
+            (match_obj.group(1) or "")
+            + (match_obj.group(2) or "")
+            + (match_obj.group(3) or "")
+            + (match_obj.group(4) or "")
+            + (match_obj.group(5) or "")
+            + (match_obj.group(6) or "")
+        )
         pitch_name = match_obj.group(1)
 
         # Parse accidental symbol to numeric offset.
@@ -525,21 +799,15 @@ class BambooFlute:
             accidental_num = 0
 
         # Parse octave marks (' = up, , = down).
+        # All notes have been normalized to absolute mode, so:
+        # octave_num = 3 + octave_relative_num.
         octave = match_obj.group(3)
         if octave:
             octave_relative_num = (
                 -octave.count(",") + octave.count("'"))
         else:
             octave_relative_num = 0
-
-        if octave_entry_mode.lower() == "relative":
-            # TODO: relative mode not yet implemented.
-            pass
-        else:
-            if octave_entry_mode.lower() != "fixed":
-                octave_entry_mode = "absolute"
-                octave_base_num = 3
-            octave_num = octave_base_num + octave_relative_num
+        octave_num = 3 + octave_relative_num
 
         # Parse duration value.
         note_value_main_code = match_obj.group(4)
@@ -560,11 +828,30 @@ class BambooFlute:
             2 - 2**(-note_value_dot))
         tie_and_slur_code = match_obj.group(6)
 
+        # Whether a \\breathe command immediately follows this note.
+        breathes = bool(match_obj.group(8))
+
         # Skip finger markup for tie continuations and rests.
         if self.tie or (pitch_name.lower() == "r"):
             self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
             if self.tie:
+                if breathes:
+                    # Tie continuation has no finger diagram, so pad
+                    # the breath mark with blanks to stay aligned with
+                    # notes that do carry a diagram.
+                    breath_mark = (
+                        r'^\markup{\center-column{'
+                        + '"∨" '
+                        + BREATH_ALIGNMENT_BLANKS
+                        + r'}}'
+                    )
+                    return (
+                        note_code + breath_mark
+                        + r" \breathe" + "\n"
+                    )
                 return note_code + " "
+            if breathes:
+                return note_code + r" \breathe" + "\n"
             return note_code + "\n"
 
         # octave number + pitch name -> MIDI number
@@ -592,13 +879,27 @@ class BambooFlute:
             self.FINGER_PLACEMENT_DICT[bamboo_flute_pitch_num][0])
         blow_strength = bamboo_flute_pitch_num // 12
 
-        if blow_strength:
-            blow_strength_markup = (
-                r"^\markup{{{}}}".format(
-                    " ".join(blow_strength * ["+"])
-                ))
+        if breathes:
+            # Combine blow strength (if any) and breath mark into one
+            # markup so they sit at the same vertical position.
+            # Space before ∨: 0 for 2+ blow marks, 1 for 1, 2 for none.
+            if blow_strength:
+                breath_spacing = "" if blow_strength >= 2 else " "
+                blow_strength_markup = (
+                    r'^\markup{"'
+                    + "".join(blow_strength * ["+"])
+                    + breath_spacing + r'∨"}'
+                )
+            else:
+                blow_strength_markup = r'^\markup{"  ∨"}'
         else:
-            blow_strength_markup = ""
+            if blow_strength:
+                blow_strength_markup = (
+                    r"^\markup{{{}}}".format(
+                        "".join(blow_strength * ["+"])
+                    ))
+            else:
+                blow_strength_markup = ""
 
         finger_diagram = (
             r"^\markup{{\center-column{{"
@@ -607,6 +908,9 @@ class BambooFlute:
             r"}}}}").format(finger_placement)
         note_with_markup = (
             note_code + finger_diagram + blow_strength_markup)
+
+        if breathes:
+            note_with_markup += r" \breathe"
 
         self.tie = bool(tie_and_slur_code) and ("~" in tie_and_slur_code)
         if self.tie:
@@ -617,27 +921,61 @@ class BambooFlute:
 
     def get_jianpu_lyrics(
             self,
-            score_code: str,
-            octave_entry_mode: str = "absolute",
-            octave_base_num: int = 3) -> str:
+            score_code: str) -> str:
         """Process a score passage and return jianpu markup for all notes.
 
         Args:
-            score_code: LilyPond note text between score markers.
-            octave_entry_mode: \"fixed\", \"relative\", or \"absolute\".
-            octave_base_num: Base octave number for absolute/fixed modes.
+            score_code: LilyPond note text between score markers, already
+                normalized to absolute-mode notation.
 
         Returns:
             A string of \\markup expressions forming the jianpu lyrics.
         """
         self.tie = False  # reset tie state before processing
-        # remove breathe code
-        score_code = score_code.replace(r"\breathe", " ")
         # remove extra volta number
         score_code = re.sub(
             r"(\\volta\s+\d*)(\s*,\s*\d*)*",
             r"\1",
             score_code)
+        result = re.sub(
+            r"(c|d|e|f|g|a|b|r)"
+            r"(ff|f|!|\?|s|ss|x)?"
+            r"(,*|'*)"
+            r"(\d+|\\breve|\\longa)"
+            r"(\.*)"
+            r"(~|\(|\)|\\\(|\\\))*"
+            r"(\s*)"
+            r"(\\breathe)?"
+            r"(\s*)"
+            r"(\||\\bar)?"
+            r"(\s*)",
+            self.jianpu_lyrics,
+            score_code,
+            flags=re.IGNORECASE)
+        # Clean up any orphan \\breathe that were not consumed by the
+        # note-matching regex (they are not valid in \\lyricmode).
+        result = result.replace(r"\breathe", " ")
+        return result
+
+    def add_finger_placement_markup(
+            self,
+            score_code: str) -> str:
+        """Process a score passage and add finger diagram markup.
+
+        Also detects \\breathe commands and adds a ∨ breath-mark to the
+        note immediately preceding each \\breathe.
+
+        Args:
+            score_code: LilyPond note text between score markers, already
+                normalized to absolute-mode notation.
+
+        Returns:
+            Score text with \\markup\\woodwind-diagram annotations
+            appended to each non-rest, non-tie-continuation note, and
+            breath marks added where appropriate.
+        """
+        self.tie = False  # reset tie state before processing
+
         return re.sub(
             r"(c|d|e|f|g|a|b|r)"
             r"(ff|f|!|\?|s|ss|x)?"
@@ -646,40 +984,8 @@ class BambooFlute:
             r"(\.*)"
             r"(~|\(|\)|\\\(|\\\))*"
             r"(\s*)"
-            r"(\||\\bar)?"
-            r"(\s*)",
-            lambda m: self.jianpu_lyrics(
-                m, octave_entry_mode, octave_base_num),
-            score_code,
-            flags=re.IGNORECASE)
-
-    def add_finger_placement_markup(
-            self,
-            score_code: str,
-            octave_entry_mode: str = "absolute",
-            octave_base_num: int = 3) -> str:
-        """Process a score passage and add finger diagram markup.
-
-        Args:
-            score_code: LilyPond note text between score markers.
-            octave_entry_mode: \"fixed\", \"relative\", or \"absolute\".
-            octave_base_num: Base octave number for absolute/fixed modes.
-
-        Returns:
-            Score text with \\markup\\woodwind-diagram annotations
-            appended to each non-rest, non-tie-continuation note.
-        """
-        self.tie = False  # reset tie state before processing
-        return re.sub(
-            r"(c|d|e|f|g|a|b|r)"
-            r"(ff|f|!|\?|s|ss|x)?"
-            r"(,*|'*)"
-            r"(\d+|\\breve|\\longa)"
-            r"(\.*)"
-            r"(~|\(|\)|\\\(|\\\))*"
-            r"(\s*)",
-            lambda m: self.finger_placement_markup(
-                m, octave_entry_mode, octave_base_num),
+            r"(\\breathe)?",
+            self.finger_placement_markup,
             score_code,
             flags=re.IGNORECASE)
 
@@ -730,15 +1036,16 @@ if __name__ == "__main__":
     score_code = score_match.group(1)
     score_code = _expand_abbreviations(score_code)
 
-    score_markup = bf.add_finger_placement_markup(
-        score_code,
-        octave_entry_mode=octave_entry_mode,
-        octave_base_num=octave_base_num)
+    # Normalize to absolute-mode notation so all downstream
+    # processing assumes a single octave-entry discipline.
+    score_code = _normalize_to_absolute(
+        score_code, octave_entry_mode, octave_base_num)
 
-    jianpu_lyrics = bf.get_jianpu_lyrics(
-        score_code,
-        octave_entry_mode=octave_entry_mode,
-        octave_base_num=octave_base_num)
+    bf.validate(score_code)
+
+    score_markup = bf.add_finger_placement_markup(score_code)
+
+    jianpu_lyrics = bf.get_jianpu_lyrics(score_code)
     print("  OK")
 
     # ------------------------------------------------------------------ #
