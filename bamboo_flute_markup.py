@@ -7,6 +7,9 @@ jianpu (numbered musical notation) lyrics for bamboo flute.
 import math
 import os
 import re
+import shutil
+import subprocess
+import sys
 from typing import Optional
 
 # Mapping from pitch class to pitch name strings used in LilyPond.
@@ -683,30 +686,156 @@ class BambooFlute:
 
 if __name__ == "__main__":
     cwd = os.path.split(os.path.realpath(__file__))[0]
-    file_name = "testcase.ly"
-    file_path = os.path.join(cwd, file_name)
-    with open(file_path, "r", encoding="UTF-8") as f:
+    src_ly = os.path.join(cwd, "testcase.ly")
+    out_ly = os.path.join(cwd, "testcase-output.ly")
+
+    # ------------------------------------------------------------------ #
+    # Step 0: Compile raw testcase.ly
+    # ------------------------------------------------------------------ #
+    print("Step 0/6: Compiling testcase.ly ...")
+    try:
+        subprocess.run(
+            ["lilypond", src_ly],
+            cwd=cwd, check=True, capture_output=True, text=True)
+    except FileNotFoundError:
+        sys.exit("ERROR: lilypond not found — is it installed and on PATH?")
+    except subprocess.CalledProcessError as exc:
+        print(exc.stderr, file=sys.stderr)
+        sys.exit("ERROR: lilypond testcase.ly returned non-zero")
+    print("  OK")
+
+    # ------------------------------------------------------------------ #
+    # Step 1: Copy testcase.ly -> testcase-output.ly
+    # ------------------------------------------------------------------ #
+    print("Step 1/6: Copying testcase.ly -> testcase-output.ly ...")
+    shutil.copy2(src_ly, out_ly)
+    print("  OK")
+
+    # ------------------------------------------------------------------ #
+    # Step 2: Generate finger-placement and jianpu markups
+    # ------------------------------------------------------------------ #
+    print("Step 2/6: Generating bamboo flute markup ...")
+    with open(src_ly, "r", encoding="UTF-8") as f:
         script = f.read()
 
     tonality = get_key_signature(script)
     bf = BambooFlute(tonality, "5")
-
     octave_entry_mode, octave_base_num = get_octave_entry_mode(script)
-    score_code_match_obj = get_score_code(script)
-    if not score_code_match_obj:
-        raise SystemExit(
-            "Error: Could not find '% score begin' / '% score end' "
+
+    score_match = get_score_code(script)
+    if not score_match:
+        sys.exit(
+            "ERROR: Could not find '% score begin' / '% score end' "
             "markers in input file.")
-    score_code = score_code_match_obj.group(1)
+    score_code = score_match.group(1)
     score_code = _expand_abbreviations(score_code)
-    score_with_markup = bf.add_finger_placement_markup(
+
+    score_markup = bf.add_finger_placement_markup(
         score_code,
         octave_entry_mode=octave_entry_mode,
         octave_base_num=octave_base_num)
-    score_with_markup = r"\textLengthOn" + score_with_markup
-    print(score_with_markup)
+
     jianpu_lyrics = bf.get_jianpu_lyrics(
         score_code,
         octave_entry_mode=octave_entry_mode,
         octave_base_num=octave_base_num)
-    print(jianpu_lyrics)
+    print("  OK")
+
+    # ------------------------------------------------------------------ #
+    # Step 3: Replace score body and insert \textLengthOn
+    # ------------------------------------------------------------------ #
+    print("Step 3/6: Inserting finger-placement markup into output ...")
+    with open(out_ly, "r", encoding="UTF-8") as f:
+        content = f.read()
+
+    # Insert \textLengthOn before % score begin, preserving indentation.
+    content = re.sub(
+        r'^(\s*)% score begin\b',
+        r'\1\\textLengthOn\n\1% score begin',
+        content,
+        flags=re.MULTILINE)
+
+    # Replace everything between % score begin and % score end.
+    content = re.sub(
+        r'(% score begin\n).*?(% score end)',
+        lambda m: m.group(1) + score_markup.rstrip('\n') + '\n' + m.group(2),
+        content,
+        flags=re.DOTALL)
+
+    with open(out_ly, "w", encoding="UTF-8") as f:
+        f.write(content)
+    print("  OK")
+
+    # ------------------------------------------------------------------ #
+    # Step 4: Insert jianpu lyrics and restructure \score block
+    # ------------------------------------------------------------------ #
+    print("Step 4/6: Inserting jianpu lyrics ...")
+    with open(out_ly, "r", encoding="UTF-8") as f:
+        content = f.read()
+
+    # Build the jianpu variable block.
+    jianpu_block = (
+        "jianpu = \\lyricmode {\n"
+        + jianpu_lyrics.rstrip('\n')
+        + "\n}\n"
+    )
+
+    # Insert the jianpu variable before \score {.
+    # NOTE: must use a lambda here so that backslashes inside
+    # jianpu_block (e.g. \lyricmode) are not misinterpreted by
+    # re.sub's template escape handling.
+    content = re.sub(
+        r'\n(\s*\\score\s*\{)',
+        lambda m: '\n\n' + jianpu_block + '\n' + m.group(1),
+        content,
+        count=1)
+
+    # Restructure the \score block:
+    #   \score { \new Staff ... } \melody \layout ... }
+    # -> \score { << \new Staff ... } \melody \new Lyrics \jianpu
+    #    >> \layout ... }
+    content = re.sub(
+        r'(\\score\s*\{\s*\n)(\s*\\new Staff)',
+        r'\1  <<\n    \2',
+        content,
+        count=1)
+    content = re.sub(
+        r'(\\melody\s*\n)(\s*)(\\layout)',
+        r'\1\2    \\new Lyrics \\jianpu\n\2  >>\n\n\2\3',
+        content,
+        count=1)
+
+    with open(out_ly, "w", encoding="UTF-8") as f:
+        f.write(content)
+    print("  OK")
+
+    # ------------------------------------------------------------------ #
+    # Step 5: Format testcase-output.ly
+    # ------------------------------------------------------------------ #
+    print("Step 5/6: Formatting testcase-output.ly ...")
+    with open(out_ly, "r", encoding="UTF-8") as f:
+        content = f.read()
+
+    # Strip trailing whitespace from each line.
+    lines = [line.rstrip() for line in content.split('\n')]
+    content = '\n'.join(lines) + '\n'
+
+    with open(out_ly, "w", encoding="UTF-8") as f:
+        f.write(content)
+    print("  OK")
+
+    # ------------------------------------------------------------------ #
+    # Step 6: Compile testcase-output.ly
+    # ------------------------------------------------------------------ #
+    print("Step 6/6: Compiling testcase-output.ly ...")
+    try:
+        subprocess.run(
+            ["lilypond", out_ly],
+            cwd=cwd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        print(exc.stderr, file=sys.stderr)
+        sys.exit("ERROR: lilypond testcase-output.ly returned non-zero")
+    print("  OK")
+
+    print("\nAll 6 steps completed successfully. "
+          "Open testcase-output.pdf to verify.")

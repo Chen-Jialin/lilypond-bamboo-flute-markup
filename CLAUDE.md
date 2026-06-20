@@ -17,15 +17,16 @@ All Python code must strictly follow the [Google Python Style Guide](https://goo
 ## Commands
 
 ```bash
-# Generate finger placement and jianpu markup from testcase.ly
+# Full automated workflow (runs all 6 steps below)
 python bamboo_flute_markup.py
 
-# Compile the annotated output to PDF (requires LilyPond)
-lilypond testcase-output.ly
-lilypond testcase.ly  # raw notes, no annotations
+# Compile with LilyPond (requires LilyPond on PATH)
+lilypond testcase.ly        # raw notes, no annotations
+lilypond testcase-output.ly  # annotated output
 ```
 
-The `__main__` block in `bamboo_flute_markup.py` reads `testcase.ly`, processes it, and prints both the finger-placement-annotated score and the jianpu lyrics to stdout. Run the script and pipe the output directly to update `testcase-output.ly` — do NOT save intermediate output files (`script_output.txt`, etc.) to disk.
+The `__main__` block in `bamboo_flute_markup.py` orchestrates the full pipeline
+(see below) — it is the one-command entry point.
 
 ## Architecture
 
@@ -56,23 +57,37 @@ A single Python script (`bamboo_flute_markup.py`) that reads LilyPond `.ly` file
 - `testcase.ly` — input test file: raw LilyPond score with `% score begin` / `% score end` markers
 - `testcase-output.ly` — annotated output: `melody` variable (with finger markup) + `jianpu` variable (with jianpu markup) + `\score` combining both in parallel
 
-### Workflow: updating testcase-output.ly
+### Workflow: automated pipeline
 
-After editing `bamboo_flute_markup.py` or `testcase.ly`, regenerate the annotated output:
+After editing `bamboo_flute_markup.py` or `testcase.ly`, regenerate the annotated
+output by running:
 
 ```bash
-# Run the script — it prints the melody (with finger markup) first,
-# then the jianpu lyrics.
 python bamboo_flute_markup.py
 ```
 
-1. Run `python bamboo_flute_markup.py` — both sections print to stdout
-2. Copy the first section (starting with `\textLengthOn`) into the `melody = \fixed c' { ... }` block, replacing the old body
-3. Copy the second section (starting with `% 1. …`) into the `jianpu = \lyricmode { ... }` block, replacing the old body
-4. Compile: `lilypond testcase-output.ly`
-5. Open `testcase-output.pdf` to verify
+The script performs the following steps in order. **If any step fails, it stops
+immediately.**
 
-- **Never save the raw script output to intermediate `.txt` files on disk.** Read from stdout and write directly into `testcase-output.ly`.
+1. `lilypond testcase.ly` — compile the raw (unannotated) score to verify it
+   is valid LilyPond input
+2. **Copy** `testcase.ly` to `testcase-output.ly` (overwriting if it exists)
+3. **Generate markup** — import the `bamboo_flute_markup` module to produce:
+   - `score_with_markup`: the melody with `^\markup{\woodwind-diagram…}` finger
+      diagrams and `^\markup{+}` blow-strength indicators
+   - `jianpu_lyrics`: a sequence of `\markup{…}` expressions in numbered notation
+4. **Replace score body** — within `testcase-output.ly`:
+   - Insert `\textLengthOn` on its own line before `% score begin`
+   - Replace the note content between `% score begin` and `% score end` with
+     `score_with_markup`
+5. **Insert jianpu lyrics** — after the `melody = …` block, add a new variable
+   `jianpu = \lyricmode { … }` containing the jianpu markup, and restructure
+   the `\score` block to use `<< … >>` with both `\melody` and `\new Lyrics
+   \jianpu`
+6. **Format** — strip trailing whitespace from every line
+7. `lilypond testcase-output.ly` — compile the annotated score to PDF
+
+Open `testcase-output.pdf` to verify the result.
 
 ## `.ly` file format
 
