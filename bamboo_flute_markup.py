@@ -60,6 +60,40 @@ JIANPU_NUM_DICT: dict[int, list[str]] = {
 # with the ∨ that appears on notes that do have a finger diagram.
 BREATH_ALIGNMENT_BLANKS = '" " " " " " " " " " " "'
 
+# Scheme definition of the Ez_numbers_engraver that prints scale-degree
+# numbers inside note heads.  Inserted into testcase-practice.ly.
+EZ_NUMBERS_ENGRAVER_DEF = (
+    r"#(define Ez_numbers_engraver" "\n"
+    r"   (make-engraver" "\n"
+    r"    (acknowledgers" "\n"
+    r"     ((note-head-interface engraver grob source-engraver)" "\n"
+    r"      (let* ((context (ly:translator-context engraver))" "\n"
+    r"       (tonic-pitch (ly:context-property context 'tonic))" "\n"
+    r"       (tonic-name (ly:pitch-notename tonic-pitch))" "\n"
+    r"       (grob-pitch" "\n"
+    r"        (ly:event-property (event-cause grob) 'pitch))" "\n"
+    r"       (grob-name (ly:pitch-notename grob-pitch))" "\n"
+    r"       (delta (modulo (- grob-name tonic-name) 7))" "\n"
+    r"       (note-names" "\n"
+    r"        (make-vector 7 (number->string (1+ delta)))))" "\n"
+    r"  (ly:grob-set-property! grob 'note-names note-names))))))"
+)
+
+# \\layout block template with Ez_numbers_engraver context for practice mode.
+_LAYOUT_WITH_ENGRAVER = (
+    r"\layout {"
+    "\n"
+    r"    \context {"
+    "\n"
+    r"      \Voice"
+    "\n"
+    r"      \consists \Ez_numbers_engraver"
+    "\n"
+    r"    }"
+    "\n"
+    r"  }"
+)
+
 
 def get_octave_entry_mode(script: str) -> tuple[str, int]:
     """Detect octave entry mode and reference number from a LilyPond script.
@@ -219,12 +253,23 @@ def _expand_abbreviations(score_code: str) -> str:
     Returns:
         Score text with all abbreviations expanded to full note form.
     """
-    # Remove \\volta N, N, ... before expansion to prevent their numeric
-    # arguments from being matched as duration-only abbreviated notes.
-    score_code = re.sub(
-        r"\\volta\s+\d+(?:\s*,\s*\d+)*",
-        "",
-        score_code)
+    # Encode \\volta and \\repeat volta before expansion to prevent
+    # their numeric arguments from being matched as duration-only
+    # abbreviated notes.
+    _VOLTA_RE = re.compile(
+        r"(\\repeat\s+volta\s+(\d+)|\\volta\s+(\d+(?:\s*,\s*\d+)*))")
+
+    volta_placeholders: dict[str, str] = {}
+    _alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    _counter: list[int] = [0]
+
+    def _encode_volta(m: re.Match) -> str:
+        key = f"__VOLTA_Z{_alphabet[_counter[0]]}__"
+        volta_placeholders[key] = m.group(0)
+        _counter[0] += 1
+        return key
+
+    score_code = _VOLTA_RE.sub(_encode_volta, score_code)
 
     last_pitch = "c"
     last_duration = "4"
@@ -252,7 +297,13 @@ def _expand_abbreviations(score_code: str) -> str:
             last_duration = duration + dots
             return last_pitch + last_duration
 
-    return _NOTE_EVENT_RE.sub(_expand_match, score_code)
+    score_code = _NOTE_EVENT_RE.sub(_expand_match, score_code)
+
+    # Restore encoded \\volta / \\repeat volta placeholders.
+    for key, original in volta_placeholders.items():
+        score_code = score_code.replace(key, original)
+
+    return score_code
 
 
 def _adjust_octave_marks(score_code: str, adjustment: int) -> str:
@@ -932,10 +983,16 @@ class BambooFlute:
             A string of \\markup expressions forming the jianpu lyrics.
         """
         self.tie = False  # reset tie state before processing
-        # remove extra volta number
+        # Convert \\volta N, M, ... to Scheme format \\volta #'(N M ...)
+        # because \\lyricmode does not parse comma-separated volta numbers
+        # correctly.
         score_code = re.sub(
-            r"(\\volta\s+\d*)(\s*,\s*\d*)*",
-            r"\1",
+            r"\\volta\s+(\d+(?:\s*,\s*\d+)*)",
+            lambda m: (
+                r"\volta #'("
+                + " ".join(re.split(r"\s*,\s*", m.group(1)))
+                + r")"
+            ),
             score_code)
         result = re.sub(
             r"(c|d|e|f|g|a|b|r)"
@@ -990,15 +1047,128 @@ class BambooFlute:
             flags=re.IGNORECASE)
 
 
+def _build_jianpu_block(jianpu_lyrics: str) -> str:
+    """Wrap jianpu lyrics into a LilyPond variable block.
+
+    Args:
+        jianpu_lyrics: Raw jianpu \\markup expressions from
+            get_jianpu_lyrics().
+
+    Returns:
+        A complete ``jianpu = \\lyricmode { ... }`` block string.
+    """
+    return (
+        "jianpu = \\lyricmode {\n"
+        + jianpu_lyrics.rstrip('\n')
+        + "\n}\n"
+    )
+
+
+def _insert_jianpu_into_score(
+        content: str, jianpu_lyrics: str) -> str:
+    """Insert ``\\new Lyrics \\jianpu`` after ``} \\melody`` in the first
+    ``\\score`` block.
+
+    Handles both cases where the score block already has ``<< >>`` (the
+    common case) and where it does not.
+
+    Only the first occurrence is modified so the MIDI ``\\score`` block
+    (if any) is left untouched.
+
+    Args:
+        content: Full LilyPond source text.
+        jianpu_lyrics: Raw jianpu \\markup expressions from
+            get_jianpu_lyrics().
+
+    Returns:
+        Content with ``\\new Lyrics \\jianpu`` inserted into the first
+        display ``\\score`` block.
+    """
+    # Insert the jianpu variable before the first \score block.
+    content = re.sub(
+        r'\n(\s*\\score\s*\{)',
+        lambda m: '\n\n' + _build_jianpu_block(jianpu_lyrics) + '\n'
+        + m.group(1),
+        content,
+        count=1)
+
+    # Insert \new Lyrics \jianpu after } \melody.
+    content = re.sub(
+        r'(} \\(melody)\s*\n)',
+        r'\1    \\new Lyrics \\jianpu\n',
+        content,
+        count=1)
+    return content
+
+
+def _remove_midi_score(content: str) -> str:
+    """Remove the MIDI-only ``\\score`` block (the one containing ``\\midi``).
+
+    Uses brace counting from the ``\\midi`` position to find the enclosing
+    ``\\score`` block, which handles nested braces in ``\\markup`` and
+    ``\\with`` blocks correctly.
+
+    Args:
+        content: Full LilyPond source text.
+
+    Returns:
+        Content with the MIDI ``\\score`` block removed.
+    """
+    midi_pos = content.find("\\midi")
+    if midi_pos == -1:
+        return content
+
+    # Search backwards for the \\score that opens before \\midi.
+    score_start = content.rfind("\\score", 0, midi_pos)
+    if score_start == -1:
+        return content
+
+    # Find the opening brace after \\score.
+    brace_pos = content.find("{", score_start)
+    if brace_pos == -1:
+        return content
+
+    # Count braces from the opening brace to find the matching close.
+    depth = 1
+    pos = brace_pos + 1
+    while pos < len(content) and depth > 0:
+        if content[pos] == "{":
+            depth += 1
+        elif content[pos] == "}":
+            depth -= 1
+        pos += 1
+
+    # Remove from leading whitespace before \\score to the matching }.
+    before_end = score_start
+    while before_end > 0 and content[before_end - 1] in (" ", "\t", "\n"):
+        before_end -= 1
+    before = content[:before_end]
+    after = content[pos:]
+    return before + "\n" + after
+
+
+def _strip_trailing_whitespace(content: str) -> str:
+    """Strip trailing whitespace from every line.
+
+    Args:
+        content: Full LilyPond source text.
+
+    Returns:
+        Content with no trailing whitespace on any line.
+    """
+    return '\n'.join(line.rstrip() for line in content.split('\n')) + '\n'
+
+
 if __name__ == "__main__":
     cwd = os.path.split(os.path.realpath(__file__))[0]
     src_ly = os.path.join(cwd, "testcase.ly")
-    out_ly = os.path.join(cwd, "testcase-output.ly")
+    practice_ly = os.path.join(cwd, "testcase-practice.ly")
+    perform_ly = os.path.join(cwd, "testcase-perform.ly")
 
     # ------------------------------------------------------------------ #
-    # Step 0: Compile raw testcase.ly
+    # Step 1: Compile raw testcase.ly
     # ------------------------------------------------------------------ #
-    print("Step 0/6: Compiling testcase.ly ...")
+    print("Step 1/6: Compiling testcase.ly ...")
     try:
         subprocess.run(
             ["lilypond", src_ly],
@@ -1008,13 +1178,6 @@ if __name__ == "__main__":
     except subprocess.CalledProcessError as exc:
         print(exc.stderr, file=sys.stderr)
         sys.exit("ERROR: lilypond testcase.ly returned non-zero")
-    print("  OK")
-
-    # ------------------------------------------------------------------ #
-    # Step 1: Copy testcase.ly -> testcase-output.ly
-    # ------------------------------------------------------------------ #
-    print("Step 1/6: Copying testcase.ly -> testcase-output.ly ...")
-    shutil.copy2(src_ly, out_ly)
     print("  OK")
 
     # ------------------------------------------------------------------ #
@@ -1044,105 +1207,107 @@ if __name__ == "__main__":
     bf.validate(score_code)
 
     score_markup = bf.add_finger_placement_markup(score_code)
-
     jianpu_lyrics = bf.get_jianpu_lyrics(score_code)
     print("  OK")
 
     # ------------------------------------------------------------------ #
-    # Step 3: Replace score body and insert \textLengthOn
+    # Step 3: Generate testcase-practice.ly
     # ------------------------------------------------------------------ #
-    print("Step 3/6: Inserting finger-placement markup into output ...")
-    with open(out_ly, "r", encoding="UTF-8") as f:
+    print("Step 3/6: Generating testcase-practice.ly ...")
+    shutil.copy2(src_ly, practice_ly)
+
+    with open(practice_ly, "r", encoding="UTF-8") as f:
         content = f.read()
 
-    # Insert \textLengthOn before % score begin, preserving indentation.
+    # Insert Ez_numbers_engraver definition before the staff-size setting.
+    content = content.replace(
+        "#(set-global-staff-size",
+        EZ_NUMBERS_ENGRAVER_DEF + "\n\n#(set-global-staff-size")
+
+    # Insert \textLengthOn and \easyHeadsOn before % score begin.
     content = re.sub(
         r'^(\s*)% score begin\b',
-        r'\1\\textLengthOn\n\1% score begin',
+        r'\1\\textLengthOn\n\1\\easyHeadsOn\n\1% score begin',
         content,
         flags=re.MULTILINE)
 
     # Replace everything between % score begin and % score end.
     content = re.sub(
         r'(% score begin\n).*?(% score end)',
-        lambda m: m.group(1) + score_markup.rstrip('\n') + '\n' + m.group(2),
+        lambda m: (
+            m.group(1) + score_markup.rstrip('\n') + '\n' + m.group(2)),
         content,
         flags=re.DOTALL)
 
-    with open(out_ly, "w", encoding="UTF-8") as f:
+    # Insert jianpu variable and restructure the \score block.
+    content = _insert_jianpu_into_score(content, jianpu_lyrics)
+
+    # Replace the display \layout { } with engraver-enabled layout.
+    content = re.sub(
+        r'\\layout\s*\{\s*\}',
+        lambda _: _LAYOUT_WITH_ENGRAVER,
+        content,
+        count=1)
+
+    # Remove the MIDI \score block.
+    content = _remove_midi_score(content)
+
+    # Strip trailing whitespace.
+    content = _strip_trailing_whitespace(content)
+
+    with open(practice_ly, "w", encoding="UTF-8") as f:
         f.write(content)
     print("  OK")
 
     # ------------------------------------------------------------------ #
-    # Step 4: Insert jianpu lyrics and restructure \score block
+    # Step 4: Compile testcase-practice.ly
     # ------------------------------------------------------------------ #
-    print("Step 4/6: Inserting jianpu lyrics ...")
-    with open(out_ly, "r", encoding="UTF-8") as f:
-        content = f.read()
-
-    # Build the jianpu variable block.
-    jianpu_block = (
-        "jianpu = \\lyricmode {\n"
-        + jianpu_lyrics.rstrip('\n')
-        + "\n}\n"
-    )
-
-    # Insert the jianpu variable before \score {.
-    # NOTE: must use a lambda here so that backslashes inside
-    # jianpu_block (e.g. \lyricmode) are not misinterpreted by
-    # re.sub's template escape handling.
-    content = re.sub(
-        r'\n(\s*\\score\s*\{)',
-        lambda m: '\n\n' + jianpu_block + '\n' + m.group(1),
-        content,
-        count=1)
-
-    # Restructure the \score block:
-    #   \score { \new Staff ... } \melody \layout ... }
-    # -> \score { << \new Staff ... } \melody \new Lyrics \jianpu
-    #    >> \layout ... }
-    content = re.sub(
-        r'(\\score\s*\{\s*\n)(\s*\\new Staff)',
-        r'\1  <<\n    \2',
-        content,
-        count=1)
-    content = re.sub(
-        r'(\\melody\s*\n)(\s*)(\\layout)',
-        r'\1\2    \\new Lyrics \\jianpu\n\2  >>\n\n\2\3',
-        content,
-        count=1)
-
-    with open(out_ly, "w", encoding="UTF-8") as f:
-        f.write(content)
-    print("  OK")
-
-    # ------------------------------------------------------------------ #
-    # Step 5: Format testcase-output.ly
-    # ------------------------------------------------------------------ #
-    print("Step 5/6: Formatting testcase-output.ly ...")
-    with open(out_ly, "r", encoding="UTF-8") as f:
-        content = f.read()
-
-    # Strip trailing whitespace from each line.
-    lines = [line.rstrip() for line in content.split('\n')]
-    content = '\n'.join(lines) + '\n'
-
-    with open(out_ly, "w", encoding="UTF-8") as f:
-        f.write(content)
-    print("  OK")
-
-    # ------------------------------------------------------------------ #
-    # Step 6: Compile testcase-output.ly
-    # ------------------------------------------------------------------ #
-    print("Step 6/6: Compiling testcase-output.ly ...")
+    print("Step 4/6: Compiling testcase-practice.ly ...")
     try:
         subprocess.run(
-            ["lilypond", out_ly],
+            ["lilypond", practice_ly],
             cwd=cwd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as exc:
         print(exc.stderr, file=sys.stderr)
-        sys.exit("ERROR: lilypond testcase-output.ly returned non-zero")
+        sys.exit(
+            "ERROR: lilypond testcase-practice.ly returned non-zero")
     print("  OK")
 
-    print("\nAll 6 steps completed successfully. "
-          "Open testcase-output.pdf to verify.")
+    # ------------------------------------------------------------------ #
+    # Step 5: Generate testcase-perform.ly
+    # ------------------------------------------------------------------ #
+    print("Step 5/6: Generating testcase-perform.ly ...")
+    shutil.copy2(src_ly, perform_ly)
+
+    with open(perform_ly, "r", encoding="UTF-8") as f:
+        content = f.read()
+
+    # Insert jianpu variable and restructure the \score block.
+    content = _insert_jianpu_into_score(content, jianpu_lyrics)
+
+    # Remove the MIDI \score block.
+    content = _remove_midi_score(content)
+
+    # Strip trailing whitespace.
+    content = _strip_trailing_whitespace(content)
+
+    with open(perform_ly, "w", encoding="UTF-8") as f:
+        f.write(content)
+    print("  OK")
+
+    # ------------------------------------------------------------------ #
+    # Step 6: Compile testcase-perform.ly
+    # ------------------------------------------------------------------ #
+    print("Step 6/6: Compiling testcase-perform.ly ...")
+    try:
+        subprocess.run(
+            ["lilypond", perform_ly],
+            cwd=cwd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        print(exc.stderr, file=sys.stderr)
+        sys.exit(
+            "ERROR: lilypond testcase-perform.ly returned non-zero")
+    print("  OK")
+
+    print("\nAll 6 steps completed successfully.")
+    print("Open testcase-practice.pdf and testcase-perform.pdf to verify.")
